@@ -193,9 +193,9 @@ class KenterSTS(object):
     def set_vectorizer(self, vectorizer):
         self._vectorizer = vectorizer
 
-    def set_preprocessor(self, preprocessor, preprocessor_kwargs):
+    def set_preprocessor(self, preprocessor, preprocessor_kwargs=None):
         self._preprocessor = preprocessor
-        self._preprocessor_kwargs = preprocessor_kwargs
+        self._preprocessor_kwargs = preprocessor_kwargs or {}
 
     def _get_features(self, text1, text2):
         def _pairwise_sim(_token, _doc):
