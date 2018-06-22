@@ -167,8 +167,8 @@ class KenterSTS(object):
         self._vectorizer = None
         self._preprocessor = _identity
         self._preprocessor_kwargs = {}
-        print('Please set vectorizer and preprocessor function by calling set_vectorizer and set_preprocessor'
-              'if you set any custom ones before saving!')
+        print('Please set vectorizer and preprocessor function by calling set_vectorizer and set_preprocessor '
+              'if you set any custom ones before saving!\n')
 
     def save(self, fname):
         """
