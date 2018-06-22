@@ -171,6 +171,16 @@ class KenterSTS(object):
               'if you set any custom ones before saving!')
 
     def save(self, fname):
+        """
+        Save trained model to path without the vectorizer and preprocessor function
+        
+        Args:
+            fname (str): path to save the model
+
+        Returns:
+            None
+        
+        """
         self._clf_save_path = fname + '.sklearn'
         joblib.dump(self._clf, self._clf_save_path)
         pickle.dump(self, open(fname, 'wb'), 2)
@@ -182,6 +192,8 @@ class KenterSTS(object):
     @staticmethod
     def load(fname):
         """
+        Load a saved model from path without the vectorizer and preprocessor function
+
         Args:
             fname (str): path to saved model
 
