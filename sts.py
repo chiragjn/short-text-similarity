@@ -17,7 +17,11 @@ from sklearn.externals import joblib
 from sklearn.svm import SVC
 
 eps = 1e-9
-identity = lambda _sent: _sent
+
+
+def _identity(text, **kwargs):
+    return text
+
 
 class GensimWordVectorizer(object):
     """
@@ -25,6 +29,7 @@ class GensimWordVectorizer(object):
 
     Provides non zero vector for unk words and other small properties
     """
+
     def __init__(self, model):
         self._model = model
         self._unk_vector = np.full((self._model.wv.vector_size,), eps, dtype=np.float32)
@@ -47,12 +52,14 @@ class KenterSTS(object):
     pairs = [(pair1_text1, pair1_text2), ...,], labels = [1, 0, ...]
 
     """
+
     def __init__(self,
                  weights,
                  unk_weight,
                  vectorizer,
                  clf=SVC(kernel='rbf', class_weight='balanced', C=10e6, gamma=10e-4),
-                 preprocessor=identity,
+                 preprocessor=_identity,
+                 preprocessor_kwargs=None,
                  bm25_k=1.2,
                  bm25_b=0.75,
                  merge_dim_features='diff',  # ['concat', 'diff', 'mul']
@@ -69,9 +76,13 @@ class KenterSTS(object):
             vectorizer (GensimWordVectorizer): GensimWordVectorizer object
             clf (sklearn classifier): Unfitted instance of sklearn classifier.
             preprocessor (function, optional): Any python function with a single argument
-                                               to be called for preprocessing the text. It must return single value as unicode/str
+                                               to be called for preprocessing the text.
+                                               It must return single value as unicode/str
                                                The tokens in the processed text are assumed to be delimited by space.
-                                               Defaults to Identity
+                                               Defaults to identity()
+                                               Note: Avoid any heavy function. It will slow down training.
+                                                     Instead preprocess the entire data beforehand
+            preprocessor_kwargs (dict, optional): kwargs to pass to preprocessor. Defaults to None
             bm25_k (float, optional): Hyperparameter k, defaults to 1.2
             bm25_b (float, optional): Hyperparameter b, defaults to 0.75
             merge_dim_features (str, optional): how to merge sentence vectors before binning them,
@@ -111,7 +122,8 @@ class KenterSTS(object):
         self.unweighted_max_sailency_bins = unweighted_max_sailency_bins
         self.dim_bins = dim_bins
         self._vectorizer = vectorizer
-        self.preprocessor = preprocessor
+        self._preprocessor = preprocessor
+        self._preprocessor_kwargs = preprocessor_kwargs or {}
         self._scale_features = scale_features
         self._clf = clf
         self._clf_save_path = None
@@ -153,8 +165,10 @@ class KenterSTS(object):
 
         self._clf = joblib.load(self._clf_save_path)
         self._vectorizer = None
-        self.preprocessor = identity
-        print('Please set vectorizer and preprocessor function by calling set_vectorizer and set_preprocessor')
+        self._preprocessor = _identity
+        self._preprocessor_kwargs = {}
+        print('Please set vectorizer and preprocessor function by calling set_vectorizer and set_preprocessor'
+              'if you set any custom ones before saving!')
 
     def save(self, fname):
         self._clf_save_path = fname + '.sklearn'
@@ -162,17 +176,26 @@ class KenterSTS(object):
         pickle.dump(self, open(fname, 'wb'), 2)
         # Since vectorizer can be giant blobs, we will avoid saving them
         # Same for preprocessor as they can be anywhere in external scope
-        print('Note: vectorizer and preprocessor will not be saved!\nPlease ensure you can set them separately during load\n')
+        print('Note: vectorizer and preprocessor will not be saved!'
+              '\nPlease ensure you can set them separately during load\n')
 
     @staticmethod
     def load(fname):
+        """
+        Args:
+            fname (str): path to saved model
+
+        Returns:
+            KenterSTS: instance without vectorizer and preprocessor set
+        """
         return pickle.load(open(fname, 'rb'))
 
     def set_vectorizer(self, vectorizer):
         self._vectorizer = vectorizer
 
-    def set_preprocessor(self, preprocessor):
-        self.preprocessor = preprocessor
+    def set_preprocessor(self, preprocessor, preprocessor_kwargs):
+        self._preprocessor = preprocessor
+        self._preprocessor_kwargs = preprocessor_kwargs
 
     def _get_features(self, text1, text2):
         def _pairwise_sim(_token, _doc):
@@ -259,8 +282,8 @@ class KenterSTS(object):
             self.avg_doc_length = 0
 
         for text1, text2 in pairs:
-            text1 = self.preprocessor(text1)
-            text2 = self.preprocessor(text2)
+            text1 = self._preprocessor(text1, **self._preprocessor_kwargs)
+            text2 = self._preprocessor(text2, **self._preprocessor_kwargs)
             _pairs.append((text1, text2))
             if not self._fitted:
                 self.avg_doc_length += len(text1.split())
@@ -292,10 +315,14 @@ class KenterSTS(object):
     def predict(self, pairs):
         return self._clf.predict(self.transform(pairs))
 
+    def predict_proba(self, pairs):
+        return self._clf.predict_proba(self.transform(pairs))
+
+
 if __name__ == '__main__':
     sample_data = [(u'hello', u'hi'), (u'i like this', u'i hate it')]
     sample_labels = [1, 0]
-    sample_weights = {u'hello': 1, u'hi': 1, u'i': 0.1, u'like': 1, u'this': 0.5, u'hate':0.9, u'it': 0.5}
+    sample_weights = {u'hello': 1, u'hi': 1, u'i': 0.1, u'like': 1, u'this': 0.5, u'hate': 0.9, u'it': 0.5}
     _docs = []
     for a, b in sample_data:
         _docs.append(a.split())
