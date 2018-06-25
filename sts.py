@@ -163,26 +163,24 @@ class KenterSTS(object):
             self._fitted
         ) = state
 
-        self._clf = joblib.load(self._clf_save_path)
         self._vectorizer = None
         self._preprocessor = _identity
         self._preprocessor_kwargs = {}
-        print('Please set vectorizer and preprocessor function by calling set_vectorizer and set_preprocessor '
-              'if you set any custom ones before saving!\n')
 
     def save(self, fname):
         """
         Save trained model to path without the vectorizer and preprocessor function
-        
+
         Args:
             fname (str): path to save the model
 
         Returns:
             None
-        
+
         """
-        self._clf_save_path = fname + '.sklearn'
-        joblib.dump(self._clf, self._clf_save_path)
+        _clf_save_path = fname + '.sklearn'
+        joblib.dump(self._clf, _clf_save_path)
+        self._clf_save_path = os.path.basename(_clf_save_path)
         pickle.dump(self, open(fname, 'wb'), 2)
         # Since vectorizer can be giant blobs, we will avoid saving them
         # Same for preprocessor as they can be anywhere in external scope
@@ -200,7 +198,13 @@ class KenterSTS(object):
         Returns:
             KenterSTS: instance without vectorizer and preprocessor set
         """
-        return pickle.load(open(fname, 'rb'))
+        parent = os.path.dirname(fname)
+        instance = pickle.load(open(fname, 'rb'))
+        _clf_path = os.path.join(parent, instance._clf_save_path)
+        instance._clf = joblib.load(_clf_path)
+        print('Please set vectorizer and preprocessor function by calling set_vectorizer and set_preprocessor '
+              'if you set any custom ones before saving!\n')
+        return instance
 
     def set_vectorizer(self, vectorizer):
         self._vectorizer = vectorizer
@@ -215,7 +219,7 @@ class KenterSTS(object):
 
         doc1 = text1.split()
         doc2 = text2.split()
-        if len(doc1) > len(doc2):
+        if len(doc1) < len(doc2):
             doc1, doc2 = doc2, doc1
 
         weighted_scores = []
