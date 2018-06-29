@@ -2,6 +2,7 @@
 # Tom Kenter & Maarten de Rijke - Short Text Similarity with Word Embeddings
 
 import os
+import glob
 
 try:
     import cPickle as pickle
@@ -12,7 +13,7 @@ import numpy as np
 import scipy as sp
 import tqdm
 from gensim.models import FastText
-from sklearn.preprocessing import scale
+from sklearn.preprocessing import StandardScaler
 from sklearn.externals import joblib
 from sklearn.svm import SVC
 
@@ -124,9 +125,10 @@ class KenterSTS(object):
         self._vectorizer = vectorizer
         self._preprocessor = preprocessor
         self._preprocessor_kwargs = preprocessor_kwargs or {}
-        self._scale_features = scale_features
         self._clf = clf
         self._clf_save_path = None
+        self._scaler = StandardScaler() if scale_features else None
+        self._scaler_save_path = None
         self._fitted = False
 
     def __getstate__(self):
@@ -141,9 +143,11 @@ class KenterSTS(object):
             self.unweighted_mat_sailency_bins,
             self.unweighted_max_sailency_bins,
             self.dim_bins,
-            self._scale_features,
+            self._scaler_save_path,
             self._clf_save_path,
-            self._fitted
+            self._fitted,
+            None,  # clf
+            None,  # scaler
         )
 
     def __setstate__(self, state):
@@ -158,9 +162,11 @@ class KenterSTS(object):
             self.unweighted_mat_sailency_bins,
             self.unweighted_max_sailency_bins,
             self.dim_bins,
-            self._scale_features,
+            self._scaler_save_path,
             self._clf_save_path,
-            self._fitted
+            self._fitted,
+            self._clf,
+            self._scaler,
         ) = state
 
         self._vectorizer = None
@@ -178,14 +184,25 @@ class KenterSTS(object):
             None
 
         """
+        if not self._fitted:
+            print('WARNING! .fit has not been called yet. Saving an unfitted instance')
+
         _clf_save_path = fname + '.sklearn'
         joblib.dump(self._clf, _clf_save_path)
         self._clf_save_path = os.path.basename(_clf_save_path)
+
+        if self._scaler is not None:
+            _scaler_save_path = fname + '.scaler'
+            joblib.dump(self._scaler, _scaler_save_path)
+            self._scaler_save_path = os.path.basename(_scaler_save_path)
+
         pickle.dump(self, open(fname, 'wb'), 2)
         # Since vectorizer can be giant blobs, we will avoid saving them
         # Same for preprocessor as they can be anywhere in external scope
-        print('Note: vectorizer and preprocessor will not be saved!'
-              '\nPlease ensure you can set them separately during load\n')
+        print('Saving...')
+        print('Note: vectorizer and preprocessor will not be saved.')
+        print('Please ensure you can set them separately during load')
+        print('---')
 
     @staticmethod
     def load(fname):
@@ -202,16 +219,25 @@ class KenterSTS(object):
         instance = pickle.load(open(fname, 'rb'))
         _clf_path = os.path.join(parent, instance._clf_save_path)
         instance._clf = joblib.load(_clf_path)
-        print('Please set vectorizer and preprocessor function by calling set_vectorizer and set_preprocessor '
-              'if you set any custom ones before saving!\n')
+
+        if instance._scaler_save_path:
+            _scaler_path = os.path.join(parent, instance._scaler_save_path)
+            instance._scaler = joblib.load(_scaler_path)
+        print('Done Loading.')
+        print('Please set vectorizer and preprocessor function by calling '
+              'set_vectorizer and set_preprocessor '
+              'if you set any custom ones before saving!')
+        print('---')
         return instance
 
     def set_vectorizer(self, vectorizer):
         self._vectorizer = vectorizer
+        print('Vectorizer set')
 
     def set_preprocessor(self, preprocessor, preprocessor_kwargs=None):
         self._preprocessor = preprocessor
         self._preprocessor_kwargs = preprocessor_kwargs or {}
+        print('Preprocessor set')
 
     def _get_features(self, text1, text2):
         def _pairwise_sim(_token, _doc):
@@ -313,8 +339,11 @@ class KenterSTS(object):
             vectors.append([v])
 
         X = np.concatenate(vectors, axis=0)
-        if self._scale_features:
-            X = scale(X)
+        if self._scaler is not None:
+            if not self._fitted:
+                X = self._scaler.fit_transform(X)
+            else:
+                X = self._scaler.transform(X)
 
         return X
 
@@ -345,11 +374,10 @@ if __name__ == '__main__':
         _docs.append(b.split())
     sample_unk_weight = 0.5
     sample_vectorizer = GensimWordVectorizer(FastText(_docs, min_count=1))
-    model = KenterSTS(sample_weights, sample_unk_weight, vectorizer=sample_vectorizer)
+    model = KenterSTS(sample_weights, sample_unk_weight, vectorizer=sample_vectorizer, scale_features=True)
     model.fit(sample_data, sample_labels)
     model.save('test_save')
     model = KenterSTS.load('test_save')
     model.set_vectorizer(sample_vectorizer)
     print("Test Prediction:", model.predict([(u'hello', u'hi')]))
-    os.remove('test_save')
-    os.remove('test_save.sklearn')
+    [os.remove(filen) for filen in glob.glob('test_save*')]
